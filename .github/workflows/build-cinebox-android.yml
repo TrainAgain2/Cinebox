@@ -259,5 +259,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Cinebox Omega universal ARM test build ${{ github.run_number }}" \
-            --notes "Universal ARM test APK built from the Omega branch. Includes armeabi-v7a (32-bit) and arm64-v8a (64-bit) libraries. Verify the SHA-256 checksum before sideloading." \
-            --prerelease
+            --notes "Universal ARM test APK built from the Omega branch. Includes armeabi-v7a (32-bit) and arm64-v8a (64-bit) libraries. Verify the SHA-256 checksum before sideloading."
