@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-   <color name="principal_color">#31AFE1</color>
-   <color name="recommendation_color">#31AFE1</color>
+   <color name="principal_color">#D92532</color>
+   <color name="principal_color_dark">#7A1119</color>
+   <color name="accent_color">#FF5A66</color>
+   <color name="recommendation_color">#D92532</color>
 
     <style name="AppTheme" parent="android:Theme.NoTitleBar">
         <!-- Main theme colors -->
         <item name="android:colorPrimary">@color/principal_color</item>
+        <item name="android:colorAccent">@color/accent_color</item>
+        <item name="android:colorControlActivated">@color/principal_color</item>
+        <item name="android:statusBarColor">@color/principal_color_dark</item>
+        <item name="android:navigationBarColor">@color/principal_color_dark</item>
     </style>
 </resources>
