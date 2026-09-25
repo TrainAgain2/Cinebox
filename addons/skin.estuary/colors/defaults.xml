@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <colors>
-	<!-- Black base and translucent black overlay; red remains only for Cinebox accents. -->
-	    <color name="primary_background">AA000000</color>
-	    <color name="secondary_background">22000000</color>
-		<color name="dialog_tint">CC000000</color>
-		<color name="dialog_header_tint">CC000000</color>
-		<color name="background">FF000000</color>
+	<!-- Match the #101010 tone of Estuary's left sidebar; red remains for Cinebox accents. -->
+	    <color name="primary_background">FF101010</color>
+	    <color name="secondary_background">00101010</color>
+		<color name="dialog_tint">FF101010</color>
+		<color name="dialog_header_tint">FF101010</color>
+		<color name="background">FF101010</color>
 		<color name="bg_image">FF909090</color>
 		<color name="bg_overlay">50FFFFFF</color>
 	<color name="black">FF000000</color>
