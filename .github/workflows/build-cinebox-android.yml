@@ -11,10 +11,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-arm64:
-    name: Build arm64-v8a test APK
+  build-arm:
+    name: Build ${{ matrix.abi }} APK
     runs-on: ubuntu-22.04
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            host: aarch64-linux-android
+          - abi: armeabi-v7a
+            host: arm-linux-androideabi
     env:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
@@ -64,7 +72,7 @@ jobs:
             'build-tools;34.0.0' \
             "ndk;$ANDROID_NDK_VERSION"
 
-      - name: Create a test signing key
+      - name: Create a temporary signing key
         run: |
           mkdir -p "$HOME/.android"
           keytool -genkeypair \
@@ -81,74 +89,179 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/kodi-tarballs
-          key: cinebox-android-tarballs-arm64-${{ hashFiles('tools/depends/**') }}
+          key: cinebox-android-tarballs-${{ matrix.abi }}-${{ hashFiles('tools/depends/**') }}
           restore-keys: |
-            cinebox-android-tarballs-arm64-
+            cinebox-android-tarballs-${{ matrix.abi }}-
 
-      - name: Build dependencies for Android arm64-v8a
+      - name: Build dependencies for Android ${{ matrix.abi }}
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/.cache/kodi-tarballs" "$RUNNER_TEMP/cinebox-depends"
+          mkdir -p "$GITHUB_WORKSPACE/.cache/kodi-tarballs" "$RUNNER_TEMP/cinebox-depends-${{ matrix.abi }}"
           cd tools/depends
           ./bootstrap
           ./configure \
             --with-tarballs="$GITHUB_WORKSPACE/.cache/kodi-tarballs" \
-            --host=aarch64-linux-android \
+            --host=${{ matrix.host }} \
             --with-sdk-path="$ANDROID_SDK_ROOT" \
             --with-ndk-path="$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION" \
-            --prefix="$RUNNER_TEMP/cinebox-depends" \
+            --prefix="$RUNNER_TEMP/cinebox-depends-${{ matrix.abi }}" \
             --disable-ccache
           make -j"$BUILD_JOBS"
 
-      - name: Configure Cinebox
+      - name: Configure Cinebox for ${{ matrix.abi }}
         run: |
           set -euo pipefail
-          make -C tools/depends/target/cmakebuildsys BUILD_DIR="$GITHUB_WORKSPACE/build-android"
+          make -C tools/depends/target/cmakebuildsys BUILD_DIR="$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}"
 
-      - name: Compile Cinebox and package the APK
+      - name: Compile Cinebox and package the ${{ matrix.abi }} APK
         run: |
           set -euo pipefail
-          make -C "$GITHUB_WORKSPACE/build-android" -j"$BUILD_JOBS"
-          make -C "$GITHUB_WORKSPACE/build-android" apk
+          make -C "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}" -j"$BUILD_JOBS"
+          make -C "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}" apk
 
-      - name: Collect the installable APK
+      - name: Collect the ${{ matrix.abi }} APK
         run: |
           set -euo pipefail
-          mkdir -p release
-          find "$GITHUB_WORKSPACE/build-android/tools/android/packaging/xbmc/build/outputs/apk" -type f -name '*.apk' -print
-          apk_path="$(find "$GITHUB_WORKSPACE/build-android/tools/android/packaging/xbmc/build/outputs/apk" -type f -name '*.apk' -print -quit)"
+          mkdir -p out
+          apk_path="$(find "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/tools/android/packaging/xbmc/build/outputs/apk" -type f -name '*.apk' -print -quit)"
           test -n "$apk_path"
-          cp "$apk_path" release/Cinebox-Omega-arm64-v8a-test.apk
-          sha256sum release/Cinebox-Omega-arm64-v8a-test.apk > release/SHA256SUMS.txt
-          cat > release/README.txt <<'EOF'
-          Cinebox Omega Android test APK
+          cp "$apk_path" "out/Cinebox-Omega-${{ matrix.abi }}-test.apk"
 
-          This APK is compiled from the Cinebox Omega branch and uses the
-          package ID io.github.trainagain2.cinebox. It is signed with a test
-          debug key and is intended for direct sideloading on compatible
-          Android and Android TV devices.
-          EOF
-
-      - name: Upload APK for validation
+      - name: Upload the ${{ matrix.abi }} APK
         uses: actions/upload-artifact@v4
         with:
-          name: Cinebox-Omega-Android-APK
+          name: cinebox-apk-${{ matrix.abi }}
+          path: out/Cinebox-Omega-${{ matrix.abi }}-test.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  assemble-universal:
+    name: Assemble universal ARM APK
+    needs: build-arm
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
+
+    steps:
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android build tools
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: Expose the Android SDK command-line tools
+        run: |
+          set -euo pipefail
+          tools_dir="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n 1)"
+          test -n "$tools_dir"
+          ln -sfn "$tools_dir" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          sdkmanager --sdk_root="$ANDROID_SDK_ROOT" 'build-tools;34.0.0'
+
+      - name: Download the arm64 APK
+        uses: actions/download-artifact@v4
+        with:
+          name: cinebox-apk-arm64-v8a
+          path: artifacts/arm64-v8a
+
+      - name: Download the arm32 APK
+        uses: actions/download-artifact@v4
+        with:
+          name: cinebox-apk-armeabi-v7a
+          path: artifacts/armeabi-v7a
+
+      - name: Merge ARM libraries into one universal APK
+        run: |
+          set -euo pipefail
+          mkdir -p universal/base universal/armv7 release
+          unzip -q artifacts/arm64-v8a/Cinebox-Omega-arm64-v8a-test.apk -d universal/base
+          unzip -q artifacts/armeabi-v7a/Cinebox-Omega-armeabi-v7a-test.apk -d universal/armv7
+          find universal/base/META-INF -maxdepth 1 -type f \( \
+            -iname '*.sf' -o -iname '*.rsa' -o -iname '*.dsa' -o \
+            -iname '*.ec' -o -iname 'manifest.mf' \
+          \) -delete
+          rm -rf universal/base/lib/armeabi-v7a
+          test -d universal/base/lib/arm64-v8a
+          test -d universal/armv7/lib/armeabi-v7a
+          cp -a universal/armv7/lib/armeabi-v7a universal/base/lib/
+          test "$(find universal/base/lib/arm64-v8a -type f -name '*.so' | wc -l)" -gt 0
+          test "$(find universal/base/lib/armeabi-v7a -type f -name '*.so' | wc -l)" -gt 0
+          (
+            cd universal/base
+            zip -X -q -r ../cinebox-universal-unsigned.apk .
+          )
+
+      - name: Align and sign the universal APK
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair \
+            -keystore "$HOME/.android/debug.keystore" \
+            -alias androiddebugkey \
+            -dname 'CN=Android Debug,O=Android,C=US' \
+            -keypass android \
+            -storepass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000
+          tools="$ANDROID_SDK_ROOT/build-tools/34.0.0"
+          "$tools/zipalign" -f -p 4 universal/cinebox-universal-unsigned.apk release/Cinebox-Omega-universal-arm32-arm64-test.apk
+          "$tools/apksigner" sign \
+            --ks "$HOME/.android/debug.keystore" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            release/Cinebox-Omega-universal-arm32-arm64-test.apk
+          "$tools/apksigner" verify --verbose --min-sdk-version 21 release/Cinebox-Omega-universal-arm32-arm64-test.apk
+
+      - name: Verify both ARM ABIs in the APK
+        run: |
+          set -euo pipefail
+          unzip -l release/Cinebox-Omega-universal-arm32-arm64-test.apk | tee release/APK_CONTENTS.txt
+          grep -q 'lib/arm64-v8a/.*\.so' release/APK_CONTENTS.txt
+          grep -q 'lib/armeabi-v7a/.*\.so' release/APK_CONTENTS.txt
+          sha256sum release/Cinebox-Omega-universal-arm32-arm64-test.apk > release/SHA256SUMS.txt
+          cat > release/README.txt <<'EOF'
+          Cinebox Omega universal ARM Android test APK
+
+          This APK contains native libraries for both 64-bit ARM (arm64-v8a)
+          and 32-bit ARM (armeabi-v7a) Android and Android TV devices. Android
+          selects the appropriate libraries when installing it. Intel x86 and
+          x86_64 devices are not included.
+
+          The APK is signed with a temporary test key and is intended for direct
+          sideloading on compatible Android and Android TV devices.
+          EOF
+
+      - name: Upload the universal APK for validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cinebox-Omega-universal-ARM-APK
           path: release/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish a prerelease with the APK
+      - name: Publish the universal ARM prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="cinebox-omega-build-${{ github.run_number }}"
           gh release create "$tag" \
-            release/Cinebox-Omega-arm64-v8a-test.apk \
+            release/Cinebox-Omega-universal-arm32-arm64-test.apk \
             release/SHA256SUMS.txt \
             release/README.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Cinebox Omega test build ${{ github.run_number }}" \
-            --notes "Android arm64-v8a test APK built automatically from the Omega branch. Verify the SHA-256 checksum before sideloading." \
+            --title "Cinebox Omega universal ARM test build ${{ github.run_number }}" \
+            --notes "Universal ARM test APK built from the Omega branch. Includes armeabi-v7a (32-bit) and arm64-v8a (64-bit) libraries. Verify the SHA-256 checksum before sideloading." \
             --prerelease
