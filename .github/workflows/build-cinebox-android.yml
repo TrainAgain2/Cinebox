@@ -119,19 +119,18 @@ jobs:
           make -C "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}" -j"$BUILD_JOBS"
           make -C "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}" apk
 
-      - name: Collect the ${{ matrix.abi }} APK
+      - name: Package the ${{ matrix.abi }} Gradle workspace
         run: |
           set -euo pipefail
           mkdir -p out
-          apk_path="$(find "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/tools/android/packaging/xbmc/build/outputs/apk" -type f -name '*.apk' -print -quit)"
-          test -n "$apk_path"
-          cp "$apk_path" "out/Cinebox-Omega-${{ matrix.abi }}-test.apk"
+          tar -C "$GITHUB_WORKSPACE/build-android-${{ matrix.abi }}/tools/android" \
+            -czf "out/cinebox-packaging-${{ matrix.abi }}.tar.gz" packaging
 
-      - name: Upload the ${{ matrix.abi }} APK
+      - name: Upload the ${{ matrix.abi }} Gradle workspace
         uses: actions/upload-artifact@v4
         with:
-          name: cinebox-apk-${{ matrix.abi }}
-          path: out/Cinebox-Omega-${{ matrix.abi }}-test.apk
+          name: cinebox-packaging-${{ matrix.abi }}
+          path: out/cinebox-packaging-${{ matrix.abi }}.tar.gz
           if-no-files-found: error
           retention-days: 30
 
@@ -143,6 +142,11 @@ jobs:
     env:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
+      ANDROID_NDK_VERSION: 21.4.7075529
+      KODI_ANDROID_STORE_FILE: ${{ github.workspace }}/debug.keystore
+      KODI_ANDROID_STORE_PASSWORD: android
+      KODI_ANDROID_KEY_ALIAS: androiddebugkey
+      KODI_ANDROID_KEY_PASSWORD: android
 
     steps:
       - name: Set up Java 17
@@ -162,66 +166,58 @@ jobs:
           tools_dir="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n 1)"
           test -n "$tools_dir"
           ln -sfn "$tools_dir" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-          sdkmanager --sdk_root="$ANDROID_SDK_ROOT" 'build-tools;34.0.0'
+          sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
+            'platforms;android-34' \
+            'build-tools;34.0.0' \
+            "ndk;$ANDROID_NDK_VERSION"
 
-      - name: Download the arm64 APK
-        uses: actions/download-artifact@v4
-        with:
-          name: cinebox-apk-arm64-v8a
-          path: artifacts/arm64-v8a
-
-      - name: Download the arm32 APK
-        uses: actions/download-artifact@v4
-        with:
-          name: cinebox-apk-armeabi-v7a
-          path: artifacts/armeabi-v7a
-
-      - name: Merge ARM libraries into one universal APK
+      - name: Create the temporary signing key
         run: |
-          set -euo pipefail
-          mkdir -p universal/base universal/armv7 release
-          unzip -q artifacts/arm64-v8a/Cinebox-Omega-arm64-v8a-test.apk -d universal/base
-          unzip -q artifacts/armeabi-v7a/Cinebox-Omega-armeabi-v7a-test.apk -d universal/armv7
-          find universal/base/META-INF -maxdepth 1 -type f \( \
-            -iname '*.sf' -o -iname '*.rsa' -o -iname '*.dsa' -o \
-            -iname '*.ec' -o -iname 'manifest.mf' \
-          \) -delete
-          rm -rf universal/base/lib/armeabi-v7a
-          test -d universal/base/lib/arm64-v8a
-          test -d universal/armv7/lib/armeabi-v7a
-          cp -a universal/armv7/lib/armeabi-v7a universal/base/lib/
-          test "$(find universal/base/lib/arm64-v8a -type f -name '*.so' | wc -l)" -gt 0
-          test "$(find universal/base/lib/armeabi-v7a -type f -name '*.so' | wc -l)" -gt 0
-          (
-            cd universal/base
-            zip -X -q -r ../cinebox-universal-unsigned.apk .
-          )
-
-      - name: Align and sign the universal APK
-        run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.android"
           keytool -genkeypair \
-            -keystore "$HOME/.android/debug.keystore" \
-            -alias androiddebugkey \
+            -keystore "$KODI_ANDROID_STORE_FILE" \
+            -alias "$KODI_ANDROID_KEY_ALIAS" \
             -dname 'CN=Android Debug,O=Android,C=US' \
-            -keypass android \
-            -storepass android \
+            -keypass "$KODI_ANDROID_KEY_PASSWORD" \
+            -storepass "$KODI_ANDROID_STORE_PASSWORD" \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000
-          tools="$ANDROID_SDK_ROOT/build-tools/34.0.0"
-          "$tools/zipalign" -f -p 4 universal/cinebox-universal-unsigned.apk release/Cinebox-Omega-universal-arm32-arm64-test.apk
-          "$tools/apksigner" sign \
-            --ks "$HOME/.android/debug.keystore" \
-            --ks-key-alias androiddebugkey \
-            --ks-pass pass:android \
-            --key-pass pass:android \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            release/Cinebox-Omega-universal-arm32-arm64-test.apk
-          "$tools/apksigner" verify --verbose --min-sdk-version 21 release/Cinebox-Omega-universal-arm32-arm64-test.apk
+
+      - name: Download the arm64 Gradle workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: cinebox-packaging-arm64-v8a
+          path: artifacts/arm64-v8a
+
+      - name: Download the arm32 Gradle workspace
+        uses: actions/download-artifact@v4
+        with:
+          name: cinebox-packaging-armeabi-v7a
+          path: artifacts/armeabi-v7a
+
+      - name: Assemble both ARM libraries with Gradle
+        run: |
+          set -euo pipefail
+          mkdir -p universal/arm64 universal/arm32 release
+          tar -xzf artifacts/arm64-v8a/cinebox-packaging-arm64-v8a.tar.gz -C universal/arm64
+          tar -xzf artifacts/armeabi-v7a/cinebox-packaging-armeabi-v7a.tar.gz -C universal/arm32
+          arm64_workspace="$GITHUB_WORKSPACE/universal/arm64/packaging"
+          arm32_workspace="$GITHUB_WORKSPACE/universal/arm32/packaging"
+          test -d "$arm64_workspace/xbmc/lib/arm64-v8a"
+          test -d "$arm32_workspace/xbmc/lib/armeabi-v7a"
+          rm -rf "$arm64_workspace/xbmc/lib/armeabi-v7a"
+          cp -a "$arm32_workspace/xbmc/lib/armeabi-v7a" "$arm64_workspace/xbmc/lib/"
+          test "$(find "$arm64_workspace/xbmc/lib/arm64-v8a" -type f -name '*.so' | wc -l)" -gt 0
+          test "$(find "$arm64_workspace/xbmc/lib/armeabi-v7a" -type f -name '*.so' | wc -l)" -gt 0
+          rm -rf "$arm64_workspace/xbmc/build"
+          (
+            cd "$arm64_workspace"
+            ./gradlew --no-daemon clean assembleDebug
+          )
+          apk_path="$(find "$arm64_workspace/xbmc/build/outputs/apk" -type f -name '*.apk' -print -quit)"
+          test -n "$apk_path"
+          cp "$apk_path" release/Cinebox-Omega-universal-arm32-arm64-test.apk
+          "$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner" verify --verbose --min-sdk-version 21 release/Cinebox-Omega-universal-arm32-arm64-test.apk
 
       - name: Verify both ARM ABIs in the APK
         run: |
