@@ -48,6 +48,13 @@ jobs:
         with:
           packages: ''
 
+      - name: Expose the SDK path expected by Kodi Omega
+        run: |
+          set -euo pipefail
+          tools_dir="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n 1)"
+          test -n "$tools_dir"
+          ln -sfn "$tools_dir" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+
       - name: Install Android SDK and NDK
         run: |
           yes | sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --licenses
