@@ -23,12 +23,12 @@ jobs:
 
     steps:
       - name: Check out Cinebox Omega
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -44,7 +44,9 @@ jobs:
             yasm zip zlib1g-dev
 
       - name: Set up Android command-line tools
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
 
       - name: Install Android SDK and NDK
         run: |
