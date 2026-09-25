@@ -288,11 +288,20 @@ jobs:
         run: |
           set -euo pipefail
           tag="cinebox-omega-build-${{ github.run_number }}"
+          version_major="$(awk '$1 == "VERSION_MAJOR" { print $2 }' version.txt)"
+          version_minor="$(awk '$1 == "VERSION_MINOR" { print $2 }' version.txt)"
+          version_tag="$(awk '$1 == "VERSION_TAG" { print $2 }' version.txt)"
+          test -n "$version_major"
+          test -n "$version_minor"
+          release_version="${version_major}.${version_minor}"
+          if [ -n "$version_tag" ]; then
+            release_version="${release_version}-${version_tag}"
+          fi
           gh release create "$tag" \
             release/Cinebox-Omega-universal-arm32-arm64-test.apk \
             release/SHA256SUMS.txt \
             release/README.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Cinebox Omega universal ARM test build ${{ github.run_number }}" \
-            --notes "Universal ARM test APK built from the Omega branch. Includes armeabi-v7a (32-bit) and arm64-v8a (64-bit) libraries. Verify the SHA-256 checksum before sideloading."
+            --title "Cinebox ${release_version} - Universal ARM" \
+            --notes "Cinebox ${release_version} universal ARM update. Includes armeabi-v7a (32-bit) and arm64-v8a (64-bit) libraries. Verify the SHA-256 checksum before sideloading."

@@ -31,8 +31,12 @@ import android.widget.TextView;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.BufferedReader;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.lang.System;
 import java.util.Enumeration;
 import java.util.List;
@@ -40,6 +44,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class Splash extends Activity
 {
@@ -64,6 +71,10 @@ public class Splash extends Activity
 
   private static final int RECORDAUDIO_RESULT_CODE = 8946;
   private static final int PERMISSION_RESULT_CODE = 8947;
+  private static final String UPDATE_RELEASE_URL = "https://api.github.com/repos/TrainAgain2/Cinebox/releases/latest";
+  private static final String UPDATE_APK_NAME = "Cinebox-Omega-universal-arm32-arm64-test.apk";
+  private static final int UPDATE_CONNECTION_TIMEOUT_MS = 5000;
+  private static final int UPDATE_READ_TIMEOUT_MS = 7000;
 
   private String mErrorMsg = "";
 
@@ -84,6 +95,8 @@ public class Splash extends Activity
   private boolean mExternalStorageChecked = false;
   private boolean mCachingDone = false;
   private boolean mPermissionOK = false;
+  private boolean mUpdateCheckStarted = false;
+  private boolean mXbmcLaunchStarted = false;
 
   private class StateMachine extends Handler
   {
@@ -619,12 +632,142 @@ public class Splash extends Activity
 
   protected void startXBMC()
   {
+    checkForCineboxUpdate();
+  }
+
+  private void launchXBMC()
+  {
+    if (mXbmcLaunchStarted)
+      return;
+
+    mXbmcLaunchStarted = true;
     // Run @APP_NAME@
     Intent intent = getIntent();
     intent.setClass(this, @APP_PACKAGE@.Main.class);
     intent.addFlags(Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP);
     startActivity(intent);
     finish();
+  }
+
+  private void checkForCineboxUpdate()
+  {
+    if (mUpdateCheckStarted)
+      return;
+
+    mUpdateCheckStarted = true;
+    Executors.newSingleThreadExecutor().execute(() -> {
+      HttpURLConnection connection = null;
+      try
+      {
+        connection = (HttpURLConnection) new URL(UPDATE_RELEASE_URL).openConnection();
+        connection.setConnectTimeout(UPDATE_CONNECTION_TIMEOUT_MS);
+        connection.setReadTimeout(UPDATE_READ_TIMEOUT_MS);
+        connection.setRequestMethod("GET");
+        connection.setRequestProperty("Accept", "application/vnd.github+json");
+        connection.setRequestProperty("User-Agent", "Cinebox-Android-Updater");
+
+        if (connection.getResponseCode() != HttpURLConnection.HTTP_OK)
+        {
+          runOnUiThread(() -> launchXBMC());
+          return;
+        }
+
+        StringBuilder response = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream())))
+        {
+          String line;
+          while ((line = reader.readLine()) != null)
+            response.append(line);
+        }
+
+        JSONObject release = new JSONObject(response.toString());
+        String version = release.optString("name", release.optString("tag_name", ""));
+        JSONArray assets = release.optJSONArray("assets");
+        if (assets == null)
+        {
+          runOnUiThread(() -> launchXBMC());
+          return;
+        }
+
+        String downloadUrl = "";
+        for (int i = 0; i < assets.length(); ++i)
+        {
+          JSONObject asset = assets.optJSONObject(i);
+          if (asset != null && UPDATE_APK_NAME.equals(asset.optString("name")))
+          {
+            downloadUrl = asset.optString("browser_download_url");
+            break;
+          }
+        }
+
+        if (downloadUrl.isEmpty() || !isNewerCineboxVersion(version))
+        {
+          runOnUiThread(() -> launchXBMC());
+          return;
+        }
+
+        final String updateVersion = version;
+        final String updateUrl = downloadUrl;
+        runOnUiThread(() -> showCineboxUpdateDialog(updateVersion, updateUrl));
+      }
+      catch (Exception e)
+      {
+        Log.d(TAG, "Cinebox update check unavailable: " + e.getMessage());
+        runOnUiThread(() -> launchXBMC());
+      }
+      finally
+      {
+        if (connection != null)
+          connection.disconnect();
+      }
+    });
+  }
+
+  private boolean isNewerCineboxVersion(String releaseName)
+  {
+    java.util.regex.Matcher matcher = java.util.regex.Pattern
+            .compile("(?i)21\\.3-p(\\d+)")
+            .matcher(releaseName);
+    if (!matcher.find())
+      return false;
+
+    try
+    {
+      int availablePatch = Integer.parseInt(matcher.group(1));
+      int installedPatch = getPackageManager()
+              .getPackageInfo(getPackageName(), 0)
+              .versionCode % 1000;
+      return availablePatch > installedPatch;
+    }
+    catch (Exception e)
+    {
+      Log.d(TAG, "Unable to compare Cinebox versions: " + e.getMessage());
+      return false;
+    }
+  }
+
+  private void showCineboxUpdateDialog(final String version, final String downloadUrl)
+  {
+    if (isFinishing())
+    {
+      launchXBMC();
+      return;
+    }
+
+    new AlertDialog.Builder(this)
+            .setTitle("Atualização Cinebox disponível")
+            .setMessage("Uma nova versão do Cinebox está disponível (" + version + "). Deseja baixar agora?")
+            .setPositiveButton("Baixar", (dialog, which) -> {
+              startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)));
+              dialog.dismiss();
+              launchXBMC();
+            })
+            .setNegativeButton("Agora não", (dialog, which) -> {
+              dialog.dismiss();
+              launchXBMC();
+            })
+            .setOnCancelListener(dialog -> launchXBMC())
+            .show();
   }
 
   @Override
