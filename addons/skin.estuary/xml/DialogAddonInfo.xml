@@ -41,7 +41,7 @@
 					<control type="image">
 						<width>425</width>
 						<height>260</height>
-						<texture background="true">DefaultNoPreview.png</texture>
+						<texture background="true" fallback="DefaultNoPreview.png">$INFO[Window(home).Property(infobackground)]</texture>
 						<aspectratio>scale</aspectratio>
 						<bordertexture border="21" infill="false">overlays/shadow.png</bordertexture>
 						<bordersize>20</bordersize>
@@ -50,7 +50,7 @@
 						<left>405</left>
 						<width>425</width>
 						<height>260</height>
-						<texture background="true">DefaultNoPreview.png</texture>
+						<texture background="true" fallback="DefaultNoPreview.png">$INFO[Window(home).Property(infobackground)]</texture>
 						<aspectratio>scale</aspectratio>
 						<bordertexture border="21" infill="false">overlays/shadow.png</bordertexture>
 						<bordersize>20</bordersize>
@@ -59,7 +59,7 @@
 						<left>810</left>
 						<width>425</width>
 						<height>260</height>
-						<texture background="true">DefaultNoPreview.png</texture>
+						<texture background="true" fallback="DefaultNoPreview.png">$INFO[Window(home).Property(infobackground)]</texture>
 						<aspectratio>scale</aspectratio>
 						<bordertexture border="21" infill="false">overlays/shadow.png</bordertexture>
 						<bordersize>20</bordersize>
@@ -78,7 +78,7 @@
 							<left>-12</left>
 							<width>425</width>
 							<height>260</height>
-							<texture background="true">DefaultNoPreview.png</texture>
+							<texture background="true" fallback="DefaultNoPreview.png">$INFO[Window(home).Property(infobackground)]</texture>
 							<aspectratio>scale</aspectratio>
 							<bordertexture border="21" infill="false">overlays/shadow.png</bordertexture>
 							<bordersize>20</bordersize>
@@ -98,7 +98,7 @@
 							<left>-12</left>
 							<width>425</width>
 							<height>260</height>
-							<texture background="true">DefaultNoPreview.png</texture>
+							<texture background="true" fallback="DefaultNoPreview.png">$INFO[Window(home).Property(infobackground)]</texture>
 							<aspectratio>scale</aspectratio>
 							<bordertexture border="21" infill="false">overlays/shadow.png</bordertexture>
 							<bordersize>20</bordersize>

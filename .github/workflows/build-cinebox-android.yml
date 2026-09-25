@@ -149,6 +149,11 @@ jobs:
       KODI_ANDROID_KEY_PASSWORD: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_PASSWORD }}
 
     steps:
+      - name: Check out Cinebox release metadata
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
       - name: Set up Java 17
         uses: actions/setup-java@v6
         with:
