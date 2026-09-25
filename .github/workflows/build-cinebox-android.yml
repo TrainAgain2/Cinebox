@@ -174,13 +174,46 @@ jobs:
       - name: Restore the persistent Cinebox signing key
         env:
           CINEBOX_RELEASE_KEYSTORE_B64: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_B64 }}
+          CINEBOX_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
           test -n "$CINEBOX_RELEASE_KEYSTORE_B64"
-          test -n "$KODI_ANDROID_STORE_PASSWORD"
-          # Accept a value pasted either as raw Base64 or inside a Markdown code fence.
-          key_b64="$(printf '%s' "$CINEBOX_RELEASE_KEYSTORE_B64" | tr -d '\r\n ' | sed -E 's/^```[[:alpha:]]*//; s/```$//')"
-          printf '%s' "$key_b64" | base64 --decode > "$KODI_ANDROID_STORE_FILE"
+          test -n "$CINEBOX_RELEASE_KEYSTORE_PASSWORD"
+          export CINEBOX_RELEASE_KEYSTORE_B64 CINEBOX_RELEASE_KEYSTORE_PASSWORD KODI_ANDROID_STORE_FILE
+          python3 - <<'PY'
+          import base64
+          import os
+          import re
+          from pathlib import Path
+
+          raw = os.environ['CINEBOX_RELEASE_KEYSTORE_B64']
+          fenced = re.findall(r'```(?:[A-Za-z]+)?\s*(.*?)```', raw, flags=re.DOTALL)
+          candidates = [raw, *fenced]
+          candidates.extend(re.findall(r'(?:[A-Za-z0-9+/=]\s*){100,}', raw))
+
+          for candidate in candidates:
+              try:
+                  decoded = base64.b64decode(re.sub(r'\s+', '', candidate), validate=True)
+              except Exception:
+                  continue
+              if decoded.startswith(b'\xfe\xed\xfe\xed'):
+                  Path(os.environ['KODI_ANDROID_STORE_FILE']).write_bytes(decoded)
+                  break
+          else:
+              raise SystemExit('No valid Cinebox JKS value was found in CINEBOX_RELEASE_KEYSTORE_B64.')
+
+          password_raw = os.environ['CINEBOX_RELEASE_KEYSTORE_PASSWORD']
+          password_blocks = re.findall(r'```(?:[A-Za-z]+)?\s*(.*?)```', password_raw, flags=re.DOTALL)
+          password = password_blocks[-1].strip() if password_blocks else password_raw.strip()
+          if not password:
+              raise SystemExit('No Cinebox keystore password was found.')
+          github_env = Path(os.environ['GITHUB_ENV'])
+          with github_env.open('a') as stream:
+              stream.write(f'KODI_ANDROID_STORE_PASSWORD={password}\n')
+              stream.write(f'KODI_ANDROID_KEY_PASSWORD={password}\n')
+          os.environ['CINEBOX_PARSED_PASSWORD'] = password
+          PY
+          KODI_ANDROID_STORE_PASSWORD="$(tail -n 2 "$GITHUB_ENV" | head -n 1 | cut -d= -f2-)"
           keytool -list \
             -keystore "$KODI_ANDROID_STORE_FILE" \
             -alias "$KODI_ANDROID_KEY_ALIAS" \
