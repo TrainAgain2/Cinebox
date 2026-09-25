@@ -178,7 +178,9 @@ jobs:
           set -euo pipefail
           test -n "$CINEBOX_RELEASE_KEYSTORE_B64"
           test -n "$KODI_ANDROID_STORE_PASSWORD"
-          printf '%s' "$CINEBOX_RELEASE_KEYSTORE_B64" | base64 --decode > "$KODI_ANDROID_STORE_FILE"
+          # Accept a value pasted either as raw Base64 or inside a Markdown code fence.
+          key_b64="$(printf '%s' "$CINEBOX_RELEASE_KEYSTORE_B64" | tr -d '\r\n ' | sed -E 's/^```[[:alpha:]]*//; s/```$//')"
+          printf '%s' "$key_b64" | base64 --decode > "$KODI_ANDROID_STORE_FILE"
           keytool -list \
             -keystore "$KODI_ANDROID_STORE_FILE" \
             -alias "$KODI_ANDROID_KEY_ALIAS" \
