@@ -143,10 +143,10 @@ jobs:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
       ANDROID_NDK_VERSION: 21.4.7075529
-      KODI_ANDROID_STORE_FILE: ${{ github.workspace }}/debug.keystore
-      KODI_ANDROID_STORE_PASSWORD: android
-      KODI_ANDROID_KEY_ALIAS: androiddebugkey
-      KODI_ANDROID_KEY_PASSWORD: android
+      KODI_ANDROID_STORE_FILE: ${{ github.workspace }}/cinebox-release.jks
+      KODI_ANDROID_STORE_PASSWORD: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_PASSWORD }}
+      KODI_ANDROID_KEY_ALIAS: cineboxrelease
+      KODI_ANDROID_KEY_PASSWORD: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_PASSWORD }}
 
     steps:
       - name: Set up Java 17
@@ -171,17 +171,18 @@ jobs:
             'build-tools;34.0.0' \
             "ndk;$ANDROID_NDK_VERSION"
 
-      - name: Create the temporary signing key
+      - name: Restore the persistent Cinebox signing key
+        env:
+          CINEBOX_RELEASE_KEYSTORE_B64: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_B64 }}
         run: |
-          keytool -genkeypair \
+          set -euo pipefail
+          test -n "$CINEBOX_RELEASE_KEYSTORE_B64"
+          test -n "$KODI_ANDROID_STORE_PASSWORD"
+          printf '%s' "$CINEBOX_RELEASE_KEYSTORE_B64" | base64 --decode > "$KODI_ANDROID_STORE_FILE"
+          keytool -list \
             -keystore "$KODI_ANDROID_STORE_FILE" \
             -alias "$KODI_ANDROID_KEY_ALIAS" \
-            -dname 'CN=Android Debug,O=Android,C=US' \
-            -keypass "$KODI_ANDROID_KEY_PASSWORD" \
-            -storepass "$KODI_ANDROID_STORE_PASSWORD" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000
+            -storepass "$KODI_ANDROID_STORE_PASSWORD" >/dev/null
 
       - name: Download the arm64 Gradle workspace
         uses: actions/download-artifact@v4
@@ -234,8 +235,8 @@ jobs:
           selects the appropriate libraries when installing it. Intel x86 and
           x86_64 devices are not included.
 
-          The APK is signed with a temporary test key and is intended for direct
-          sideloading on compatible Android and Android TV devices.
+          The APK is signed with the persistent Cinebox release key, so later
+          Cinebox updates signed with the same key install over this version.
           EOF
 
       - name: Upload the universal APK for validation
