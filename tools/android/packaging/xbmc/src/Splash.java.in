@@ -49,9 +49,10 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import org.json.JSONArray;
-import org.json.JSONObject;
+import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
+import androidx.core.content.ContextCompat;
 
 public class Splash extends Activity
 {
@@ -76,6 +77,7 @@ public class Splash extends Activity
 
   private static final int RECORDAUDIO_RESULT_CODE = 8946;
   private static final int PERMISSION_RESULT_CODE = 8947;
+  private static final int UPDATE_INSTALL_RESULT_CODE = 8948;
   private static final String UPDATE_RELEASE_URL = "https://api.github.com/repos/TrainAgain2/Cinebox/releases/latest";
   private static final String UPDATE_APK_NAME = "Cinebox-Omega-universal-arm32-arm64-test.apk";
   private static final String UPDATE_APK_MIME_TYPE = "application/vnd.android.package-archive";
@@ -103,6 +105,8 @@ public class Splash extends Activity
   private boolean mPermissionOK = false;
   private boolean mUpdateCheckStarted = false;
   private boolean mXbmcLaunchStarted = false;
+  private boolean mUpdateDownloadInProgress = false;
+  private boolean mUpdateInstallerLaunched = false;
   private long mUpdateDownloadId = -1;
   private BroadcastReceiver mUpdateDownloadReceiver = null;
   private String mPendingUpdateVersion = "";
@@ -597,6 +601,13 @@ public class Splash extends Activity
       }
       mStateMachine.sendEmptyMessage(CheckingPermissionsDone);
     }
+    else if (requestCode == UPDATE_INSTALL_RESULT_CODE)
+    {
+      mUpdateInstallerLaunched = false;
+      if (resultCode == RESULT_CANCELED)
+        Toast.makeText(this, "Atualização cancelada. O Cinebox continua aberto.", Toast.LENGTH_LONG).show();
+      launchXBMC();
+    }
   }
 
   @Override
@@ -805,6 +816,7 @@ public class Splash extends Activity
   {
     try
     {
+      showCineboxUpdateDownloadScreen();
       File updateDirectory = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
       if (updateDirectory == null)
         throw new IOException("Cinebox update storage is unavailable.");
@@ -831,10 +843,11 @@ public class Splash extends Activity
 
       registerUpdateDownloadReceiver();
       mUpdateDownloadId = downloadManager.enqueue(request);
+      mUpdateDownloadInProgress = true;
+      Log.i(TAG, "Cinebox update download enqueued: " + mUpdateDownloadId);
       Toast.makeText(this,
-              "Download iniciado. O Android pedirá confirmação para atualizar quando terminar.",
+              "Baixando atualização. O instalador Android abrirá ao terminar.",
               Toast.LENGTH_LONG).show();
-      launchXBMC();
     }
     catch (Exception e)
     {
@@ -862,7 +875,8 @@ public class Splash extends Activity
 
     IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-      getApplicationContext().registerReceiver(mUpdateDownloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+      ContextCompat.registerReceiver(getApplicationContext(), mUpdateDownloadReceiver, filter,
+              ContextCompat.RECEIVER_EXPORTED);
     else
       getApplicationContext().registerReceiver(mUpdateDownloadReceiver, filter);
   }
@@ -884,6 +898,7 @@ public class Splash extends Activity
       int status = cursor.getInt(statusColumn);
       if (status == DownloadManager.STATUS_SUCCESSFUL)
       {
+        Log.i(TAG, "Cinebox update download completed successfully.");
         File updateDirectory = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
         if (updateDirectory == null)
           throw new IOException("Cinebox update storage is unavailable.");
@@ -909,6 +924,7 @@ public class Splash extends Activity
     {
       unregisterUpdateDownloadReceiver();
       mUpdateDownloadId = -1;
+      mUpdateDownloadInProgress = false;
     }
   }
 
@@ -917,14 +933,16 @@ public class Splash extends Activity
     Intent installIntent = new Intent(Intent.ACTION_VIEW);
     installIntent.setDataAndType(updateApk, UPDATE_APK_MIME_TYPE);
     installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-    installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
     try
     {
-      getApplicationContext().startActivity(installIntent);
+      mUpdateInstallerLaunched = true;
+      Log.i(TAG, "Opening Android package installer for Cinebox update.");
+      startActivityForResult(installIntent, UPDATE_INSTALL_RESULT_CODE);
     }
     catch (Exception e)
     {
+      mUpdateInstallerLaunched = false;
       Log.e(TAG, "Unable to open Android package installer", e);
       Toast.makeText(getApplicationContext(),
               "A atualização foi baixada, mas o instalador Android não abriu.",
@@ -946,6 +964,20 @@ public class Splash extends Activity
       Log.d(TAG, "Cinebox update receiver was already removed.");
     }
     mUpdateDownloadReceiver = null;
+  }
+
+  private void showCineboxUpdateDownloadScreen()
+  {
+    if (mTextView == null || mProgress == null)
+    {
+      setContentView(R.layout.activity_splash);
+      mProgress = (ProgressBar) findViewById(R.id.progressBar1);
+      mTextView = (TextView) findViewById(R.id.textView1);
+    }
+
+    mTextView.setText("Baixando atualização Cinebox...");
+    mProgress.setIndeterminate(true);
+    mProgress.setVisibility(View.VISIBLE);
   }
 
   private void showCineboxUpdateDialog(final String version, final String downloadUrl)

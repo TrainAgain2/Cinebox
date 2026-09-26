@@ -255,6 +255,8 @@ jobs:
           cp -a "$arm32_workspace/xbmc/lib/armeabi-v7a" "$arm64_workspace/xbmc/lib/"
           test "$(find "$arm64_workspace/xbmc/lib/arm64-v8a" -type f -name '*.so' | wc -l)" -gt 0
           test "$(find "$arm64_workspace/xbmc/lib/armeabi-v7a" -type f -name '*.so' | wc -l)" -gt 0
+          test -s "$arm64_workspace/xbmc/lib/arm64-v8a/lib_imaging.so"
+          test -s "$arm64_workspace/xbmc/lib/armeabi-v7a/lib_imaging.so"
 
           # Kodi Omega's arm64 libc++ runtime is already built with 16 KB LOAD
           # segments. NDK r27 leaves the GNU_RELRO MemSiz 12 KB beyond its
@@ -351,6 +353,8 @@ jobs:
           unzip -l release/Cinebox-Omega-universal-arm32-arm64-test.apk | tee release/APK_CONTENTS.txt
           grep -q 'lib/arm64-v8a/.*\.so' release/APK_CONTENTS.txt
           grep -q 'lib/armeabi-v7a/.*\.so' release/APK_CONTENTS.txt
+          grep -q 'lib/arm64-v8a/lib_imaging\.so' release/APK_CONTENTS.txt
+          grep -q 'lib/armeabi-v7a/lib_imaging\.so' release/APK_CONTENTS.txt
           sha256sum release/Cinebox-Omega-universal-arm32-arm64-test.apk > release/SHA256SUMS.txt
           cat > release/README.txt <<'EOF'
           Cinebox Omega universal ARM Android test APK
