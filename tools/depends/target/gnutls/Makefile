@@ -19,6 +19,13 @@ DEPS = ../../Makefile.include Makefile ../../download-files.include \
 CONFIGURE_OPTIONS+= ac_cv_func_malloc_0_nonnull=yes \
                     ac_cv_func_realloc_0_nonnull=yes
 
+# NDK r27 declares timezone_t from API 28 but only exposes the related
+# mktime_z/tzalloc APIs from API 35. Keep GnuTLS on its portable gnulib
+# fallback for Cinebox's Android 9+ build target.
+ifeq ($(OS),android)
+  CONFIGURE_OPTIONS+= ac_cv_type_timezone_t=no
+endif
+
 # configuration settings
 CONFIGURE=./configure --prefix=$(PREFIX) \
                       --disable-shared \
