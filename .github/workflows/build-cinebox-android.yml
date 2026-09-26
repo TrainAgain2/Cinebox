@@ -26,7 +26,9 @@ jobs:
     env:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
-      ANDROID_NDK_VERSION: 21.4.7075529
+      # NDK r28 emits 16 KB-aligned ARM64 ELF libraries by default, required
+      # for reliable operation on current Android 16 / 16 KB page-size devices.
+      ANDROID_NDK_VERSION: 28.0.12433566
       BUILD_JOBS: 2
 
     steps:
@@ -68,8 +70,8 @@ jobs:
           yes | sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --licenses
           sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
             'platform-tools' \
-            'platforms;android-34' \
-            'build-tools;34.0.0' \
+            'platforms;android-35' \
+            'build-tools;35.0.0' \
             "ndk;$ANDROID_NDK_VERSION"
 
       - name: Create a temporary signing key
@@ -142,7 +144,7 @@ jobs:
     env:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
-      ANDROID_NDK_VERSION: 21.4.7075529
+      ANDROID_NDK_VERSION: 28.0.12433566
       KODI_ANDROID_STORE_FILE: ${{ github.workspace }}/cinebox-release.jks
       KODI_ANDROID_STORE_PASSWORD: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_PASSWORD }}
       KODI_ANDROID_KEY_ALIAS: cineboxrelease
@@ -172,8 +174,8 @@ jobs:
           test -n "$tools_dir"
           ln -sfn "$tools_dir" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
           sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
-            'platforms;android-34' \
-            'build-tools;34.0.0' \
+            'platforms;android-35' \
+            'build-tools;35.0.0' \
             "ndk;$ANDROID_NDK_VERSION"
 
       - name: Restore the persistent Cinebox signing key
@@ -258,7 +260,51 @@ jobs:
           apk_path="$(find "$arm64_workspace/xbmc/build/outputs/apk" -type f -name '*.apk' -print -quit)"
           test -n "$apk_path"
           cp "$apk_path" release/Cinebox-Omega-universal-arm32-arm64-test.apk
-          "$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner" verify --verbose --min-sdk-version 21 release/Cinebox-Omega-universal-arm32-arm64-test.apk
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --min-sdk-version 21 release/Cinebox-Omega-universal-arm32-arm64-test.apk
+
+      - name: Verify Android 16 native-library compatibility
+        run: |
+          set -euo pipefail
+          apk="release/Cinebox-Omega-universal-arm32-arm64-test.apk"
+          verifier="$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          test -x "$verifier"
+
+          rm -rf verify-16kb
+          mkdir -p verify-16kb
+          unzip -qq "$apk" 'lib/arm64-v8a/*.so' -d verify-16kb
+
+          export verifier
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          failures = []
+          for library in sorted(Path('verify-16kb/lib/arm64-v8a').glob('*.so')):
+              result = subprocess.run(
+                  [os.environ['verifier'], '-lW', str(library)],
+                  check=True, text=True, capture_output=True)
+              loads = []
+              relro = None
+              for line in result.stdout.splitlines():
+                  fields = line.split()
+                  if not fields:
+                      continue
+                  if fields[0] == 'LOAD':
+                      loads.append(int(fields[-1], 16))
+                  elif fields[0] == 'GNU_RELRO':
+                      relro = (int(fields[2], 16), int(fields[5], 16))
+              if not loads or any(alignment != 0x4000 for alignment in loads):
+                  failures.append(f'{library}: LOAD segments are not 16 KB aligned')
+              if relro and (relro[0] + relro[1]) % 0x4000:
+                  failures.append(f'{library}: GNU_RELRO is not 16 KB aligned')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          print('All ARM64 Cinebox libraries are 16 KB ELF aligned.')
+          PY
+
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$apk"
 
       - name: Verify both ARM ABIs in the APK
         run: |
@@ -274,6 +320,9 @@ jobs:
           and 32-bit ARM (armeabi-v7a) Android and Android TV devices. Android
           selects the appropriate libraries when installing it. Intel x86 and
           x86_64 devices are not included.
+
+          Android 16 compatibility: ARM64 native libraries are built and APK-
+          aligned for 16 KB page-size devices.
 
           The APK is signed with the persistent Cinebox release key, so later
           Cinebox updates signed with the same key install over this version.
@@ -310,4 +359,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Cinebox ${release_version} - Universal ARM" \
-            --notes "Cinebox ${release_version} universal ARM update. Includes armeabi-v7a (32-bit) and arm64-v8a (64-bit) libraries. Verify the SHA-256 checksum before sideloading."
+            --notes "Cinebox ${release_version} universal ARM update. Includes armeabi-v7a (32-bit) and arm64-v8a (64-bit) libraries, with Android 16 16 KB page-size compatibility validated before publication. Verify the SHA-256 checksum before sideloading."

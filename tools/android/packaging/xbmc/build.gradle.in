@@ -46,6 +46,10 @@ android {
         }
     }
     packagingOptions{
+      // Keep native libraries uncompressed; AGP 8.5.1 aligns them to 16 KB.
+      jniLibs {
+        useLegacyPackaging false
+      }
       doNotStrip '**.setup'
     }
 }

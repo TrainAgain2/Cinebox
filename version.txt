@@ -8,8 +8,8 @@ COPYRIGHT_YEARS 2005-2025
 WEBSITE https://github.com/TrainAgain2/Cinebox
 VERSION_MAJOR 21
 VERSION_MINOR 3
-VERSION_TAG p18
-VERSION_CODE 21.3.18
+VERSION_TAG p19
+VERSION_CODE 21.3.19
 ADDON_API 21.3.0
 ADDON_REPOS repository.xbmc.org|https://mirrors.kodi.tv
 APP_PACKAGE io.github.trainagain2.cinebox
