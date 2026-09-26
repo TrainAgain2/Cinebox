@@ -101,11 +101,13 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/.cache/kodi-tarballs" "$RUNNER_TEMP/cinebox-depends-${{ matrix.abi }}"
           cd tools/depends
           ./bootstrap
+          # NDK r28's libiconv build uses mempcpy, available from API 23.
           ./configure \
             --with-tarballs="$GITHUB_WORKSPACE/.cache/kodi-tarballs" \
             --host=${{ matrix.host }} \
             --with-sdk-path="$ANDROID_SDK_ROOT" \
             --with-ndk-path="$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION" \
+            --with-ndk-api=23 \
             --prefix="$RUNNER_TEMP/cinebox-depends-${{ matrix.abi }}" \
             --disable-ccache
           make -j"$BUILD_JOBS"

@@ -3,9 +3,10 @@ set(PLATFORM_OPTIONAL_DEPS_EXCLUDE CEC)
 set(APP_RENDER_SYSTEM gles)
 list(APPEND PLATFORM_OPTIONAL_DEPS LibDovi)
 
-# Store SDK compile version
-set(TARGET_SDK 34)
-# Minimum supported SDK version
-set(TARGET_MINSDK 21)
+# Compile and target Android 15 APIs while remaining compatible with newer
+# Android 16 devices. NDK r28 requires API 23 for libiconv's mempcpy usage.
+set(TARGET_SDK 35)
+# Minimum supported SDK version (Android 6.0).
+set(TARGET_MINSDK 23)
 
 set(${CORE_PLATFORM_NAME_LC}_SEARCH_CONFIG NO_DEFAULT_PATH CACHE STRING "")
