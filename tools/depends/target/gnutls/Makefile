@@ -1,8 +1,7 @@
 include ../../Makefile.include GNUTLS-VERSION ../../download-files.include
 DEPS = ../../Makefile.include Makefile ../../download-files.include \
-                              add-dl-as-private-lib.patch \
-                              03-support-correct-cisdigit.patch \
-                              android-fpending.patch
+                              0001-clang-lt-17-fix.patch \
+                              0002-makefile-am-wasm-fix.patch
 
 # disable rpl_malloc and rpl_realloc symbols in glib
 # causes linking errors in libmicrohttpd and ffmpeg with missing symbols
@@ -19,13 +18,6 @@ DEPS = ../../Makefile.include Makefile ../../download-files.include \
 CONFIGURE_OPTIONS+= ac_cv_func_malloc_0_nonnull=yes \
                     ac_cv_func_realloc_0_nonnull=yes
 
-# NDK r27 declares timezone_t from API 28 but only exposes the related
-# mktime_z/tzalloc APIs from API 35. Keep GnuTLS on its portable gnulib
-# fallback for Cinebox's Android 9+ build target.
-ifeq ($(OS),android)
-  CONFIGURE_OPTIONS+= ac_cv_type_timezone_t=no
-endif
-
 # configuration settings
 CONFIGURE=./configure --prefix=$(PREFIX) \
                       --disable-shared \
@@ -39,26 +31,28 @@ CONFIGURE=./configure --prefix=$(PREFIX) \
                       --disable-guile \
                       --disable-tools \
                       --without-idn \
+                      --without-brotli \
+                      --without-zstd \
                       $(CONFIGURE_OPTIONS)
 
 # LLVM 15 has raised this to error by default. drop back to warning
-CFLAGS+= -Wno-error=implicit-int
+CFLAGS+= -Wno-error=implicit-int -Wno-error=implicit-function-declaration -Wno-error=int-conversion
 export CFLAGS
 
 LIBDYLIB=$(PLATFORM)/lib/.libs/lib$(LIBNAME).a
 
 all: .installed-$(PLATFORM)
 
-$(PLATFORM): $(DEPS) | $(TARBALLS_LOCATION)/$(ARCHIVE).$(HASH_TYPE)
+.configured-$(PLATFORM): $(DEPS) | $(TARBALLS_LOCATION)/$(ARCHIVE).$(HASH_TYPE)
 	rm -rf $(PLATFORM)/*; mkdir -p $(PLATFORM)
 	cd $(PLATFORM); $(ARCHIVE_TOOL) $(ARCHIVE_TOOL_FLAGS) $(TARBALLS_LOCATION)/$(ARCHIVE)
-	cd $(PLATFORM); patch -p1 -i ../add-dl-as-private-lib.patch
-	cd $(PLATFORM); patch -p1 -i ../03-support-correct-cisdigit.patch
-	cd $(PLATFORM); patch -p1 -i ../android-fpending.patch
+	cd $(PLATFORM); patch -p1 -i ../0001-clang-lt-17-fix.patch
+	cd $(PLATFORM); patch -p1 -i ../0002-makefile-am-wasm-fix.patch
 	cd $(PLATFORM); $(AUTORECONF) -vif
 	cd $(PLATFORM); $(CONFIGURE)
+	touch $@
 
-$(LIBDYLIB): $(PLATFORM)
+$(LIBDYLIB): .configured-$(PLATFORM)
 	$(MAKE) -C $(PLATFORM)
 
 .installed-$(PLATFORM): $(LIBDYLIB)
@@ -67,7 +61,7 @@ $(LIBDYLIB): $(PLATFORM)
 
 clean:
 	$(MAKE) -C $(PLATFORM) clean
-	rm -f .installed-$(PLATFORM)
+	rm -f .installed-$(PLATFORM) .configured-$(PLATFORM)
 
 distclean::
-	rm -rf $(PLATFORM) .installed-$(PLATFORM)
+	rm -rf $(PLATFORM) .installed-$(PLATFORM) .configured-$(PLATFORM)
