@@ -1,7 +1,8 @@
 include ../../Makefile.include SQLITE3-VERSION ../../download-files.include
 DEPS = ../../Makefile.include SQLITE3-VERSION Makefile ../../download-files.include \
                                 001-Disable-sqlite3bin.patch \
-                                sqlite3.c.patch
+                                sqlite3.c.patch \
+                                android-strerror-r.patch
 
 # configuration settings
 export CXXFLAGS+=-DSQLITE_ENABLE_COLUMN_METADATA=1
@@ -18,8 +19,13 @@ $(PLATFORM): $(DEPS) | $(TARBALLS_LOCATION)/$(ARCHIVE).$(HASH_TYPE)
 	cd $(PLATFORM); $(ARCHIVE_TOOL) $(ARCHIVE_TOOL_FLAGS) $(TARBALLS_LOCATION)/$(ARCHIVE)
 	# do not build the program sqlite3
 	cd $(PLATFORM); patch -p1 -i ../001-Disable-sqlite3bin.patch
-# seems MAP_POPULATE is broken on aarch64
-ifneq ($(OS),android)
+
+# Android's API 21 strerror_r has the POSIX int return type even when
+# __USE_GNU is defined.  Avoid treating it as the GNU char* variant.
+ifeq ($(OS),android)
+	cd $(PLATFORM); patch -p1 -i ../android-strerror-r.patch
+else
+	# seems MAP_POPULATE is broken on aarch64
 	cd $(PLATFORM); patch -p1 -i ../sqlite3.c.patch
 endif
 	cd $(PLATFORM); $(AUTORECONF) -vif
