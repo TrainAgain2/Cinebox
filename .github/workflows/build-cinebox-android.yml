@@ -148,9 +148,6 @@ jobs:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
       ANDROID_NDK_VERSION: 27.3.13750724
-      # r28 packages a libc++_shared runtime with 16 KB-aligned RELRO.
-      # Kodi Omega and its dependencies remain compiled with r27.
-      CINEBOX_RUNTIME_NDK_VERSION: 28.2.13676358
       KODI_ANDROID_STORE_FILE: ${{ github.workspace }}/cinebox-release.jks
       KODI_ANDROID_STORE_PASSWORD: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_PASSWORD }}
       KODI_ANDROID_KEY_ALIAS: cineboxrelease
@@ -182,8 +179,7 @@ jobs:
           sdkmanager --sdk_root="$ANDROID_SDK_ROOT" \
             'platforms;android-35' \
             'build-tools;35.0.0' \
-            "ndk;$ANDROID_NDK_VERSION" \
-            "ndk;$CINEBOX_RUNTIME_NDK_VERSION"
+            "ndk;$ANDROID_NDK_VERSION"
 
       - name: Restore the persistent Cinebox signing key
         env:
@@ -260,20 +256,40 @@ jobs:
           test "$(find "$arm64_workspace/xbmc/lib/arm64-v8a" -type f -name '*.so' | wc -l)" -gt 0
           test "$(find "$arm64_workspace/xbmc/lib/armeabi-v7a" -type f -name '*.so' | wc -l)" -gt 0
 
-          # NDK r27 compiles Kodi Omega successfully, but its copied
-          # libc++_shared.so has an unaligned GNU_RELRO range on 16 KB Android
-          # devices. Use the ABI-compatible r28 shared runtime, which is
-          # 16 KB-aligned by default, for both bundled ARM ABIs.
-          runtime_root="$ANDROID_SDK_ROOT/ndk/$CINEBOX_RUNTIME_NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib"
-          for target in \
-            'arm64-v8a:aarch64-linux-android' \
-            'armeabi-v7a:arm-linux-androideabi'; do
-            abi="${target%%:*}"
-            host="${target#*:}"
-            runtime="$runtime_root/$host/libc++_shared.so"
-            test -s "$runtime"
-            install -p "$runtime" "$arm64_workspace/xbmc/lib/$abi/libc++_shared.so"
-          done
+          # Kodi Omega's arm64 libc++ runtime is already built with 16 KB LOAD
+          # segments. NDK r27 leaves the GNU_RELRO MemSiz 12 KB beyond its
+          # final 16 KB page boundary, which crashes on Android 16 devices.
+          # Trim only that ELF program-header size before Gradle signs the APK.
+          python3 - "$arm64_workspace/xbmc/lib/arm64-v8a/libc++_shared.so" <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          data = bytearray(path.read_bytes())
+          if data[:4] != b'\x7fELF' or data[4] != 2 or data[5] != 1:
+              raise SystemExit(f'Expected a little-endian ELF64 runtime: {path}')
+          phoff = struct.unpack_from('<Q', data, 32)[0]
+          phentsize = struct.unpack_from('<H', data, 54)[0]
+          phnum = struct.unpack_from('<H', data, 56)[0]
+          for index in range(phnum):
+              offset = phoff + index * phentsize
+              p_type = struct.unpack_from('<I', data, offset)[0]
+              if p_type != 0x6474E552:  # PT_GNU_RELRO
+                  continue
+              virtaddr = struct.unpack_from('<Q', data, offset + 16)[0]
+              memsize = struct.unpack_from('<Q', data, offset + 40)[0]
+              aligned_end = ((virtaddr + memsize) // 0x4000) * 0x4000
+              new_memsize = aligned_end - virtaddr
+              if not 0 < new_memsize <= memsize:
+                  raise SystemExit('Invalid GNU_RELRO alignment calculation.')
+              struct.pack_into('<Q', data, offset + 40, new_memsize)
+              path.write_bytes(data)
+              print(f'Adjusted GNU_RELRO MemSiz from {memsize:#x} to {new_memsize:#x}.')
+              break
+          else:
+              raise SystemExit('GNU_RELRO program header not found.')
+          PY
 
           rm -rf "$arm64_workspace/xbmc/build"
           (
