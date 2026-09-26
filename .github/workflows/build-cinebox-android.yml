@@ -26,9 +26,9 @@ jobs:
     env:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
-      # NDK r28 emits 16 KB-aligned ARM64 ELF libraries by default, required
-      # for reliable operation on current Android 16 / 16 KB page-size devices.
-      ANDROID_NDK_VERSION: 28.0.12433566
+      # NDK r27 supports Android 5.0. 16 KB ELF alignment is added explicitly
+      # by the Cinebox Android toolchain for Android 16 compatibility.
+      ANDROID_NDK_VERSION: 27.3.13750724
       BUILD_JOBS: 2
 
     steps:
@@ -101,13 +101,13 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/.cache/kodi-tarballs" "$RUNNER_TEMP/cinebox-depends-${{ matrix.abi }}"
           cd tools/depends
           ./bootstrap
-          # NDK r28 dependencies require APIs through Android 9 / API 28.
+          # Keep the universal APK compatible with Android 5.0 / API 21.
           ./configure \
             --with-tarballs="$GITHUB_WORKSPACE/.cache/kodi-tarballs" \
             --host=${{ matrix.host }} \
             --with-sdk-path="$ANDROID_SDK_ROOT" \
             --with-ndk-path="$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION" \
-            --with-ndk-api=28 \
+            --with-ndk-api=21 \
             --prefix="$RUNNER_TEMP/cinebox-depends-${{ matrix.abi }}" \
             --disable-ccache
           make -j"$BUILD_JOBS"
@@ -146,7 +146,7 @@ jobs:
     env:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
-      ANDROID_NDK_VERSION: 28.0.12433566
+      ANDROID_NDK_VERSION: 27.3.13750724
       KODI_ANDROID_STORE_FILE: ${{ github.workspace }}/cinebox-release.jks
       KODI_ANDROID_STORE_PASSWORD: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_PASSWORD }}
       KODI_ANDROID_KEY_ALIAS: cineboxrelease

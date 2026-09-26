@@ -315,7 +315,9 @@ case $host in
     deps_dir="$use_host-$use_ndk_api-$build_type"
     platform_cflags="-DANDROID -fexceptions -funwind-tables -fstack-protector-strong -no-canonical-prefixes -fPIC -DPIC"
     optimize_flags="-Os"
-    platform_ldflags="-Wl,--exclude-libs,libgcc.a -Wl,--exclude-libs,libatomic.a -L$prefix/$deps_dir/lib/android-$use_ndk_api"
+    # NDK r27 needs these linker flags to emit 16 KB-aligned ARM64 ELFs for
+    # Android 16 page-size devices. The flags flow into every target dependency.
+    platform_ldflags="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 -Wl,--exclude-libs,libgcc.a -Wl,--exclude-libs,libatomic.a -L$prefix/$deps_dir/lib/android-$use_ndk_api"
 
     case $host in
       arm*-*linux-android*)

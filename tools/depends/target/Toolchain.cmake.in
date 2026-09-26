@@ -113,6 +113,7 @@ set(CMAKE_C_FLAGS_DEBUG "@platform_cflags_debug@ @platform_includes@ -isystem @p
 set(CMAKE_CXX_FLAGS_DEBUG "@platform_cxxflags_debug@ @platform_includes@ -isystem @prefix@/@deps_dir@/include")
 set(CMAKE_CPP_FLAGS "@platform_cflags@ @platform_includes@ -isystem @prefix@/@deps_dir@/include")
 set(CMAKE_EXE_LINKER_FLAGS "-L@prefix@/@deps_dir@/lib @platform_ldflags@")
+set(CMAKE_SHARED_LINKER_FLAGS "-L@prefix@/@deps_dir@/lib @platform_ldflags@")
 set(ENV{CFLAGS} ${CMAKE_C_FLAGS})
 set(ENV{CXXFLAGS} ${CMAKE_CXX_FLAGS})
 set(ENV{CPPFLAGS} ${CMAKE_CPP_FLAGS})
@@ -218,4 +219,3 @@ set(PROJECT_BUILDENV CC_FOR_BUILD=${CC_FOR_BUILD}
 set(DEP_BUILDENV ${CMAKE_COMMAND} -E env ${PROJECT_TARGETENV} ${PROJECT_BUILDENV})
 
 set(KODI_DEPENDSBUILD 1)
-
