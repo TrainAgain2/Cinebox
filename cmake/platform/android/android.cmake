@@ -3,11 +3,11 @@ set(PLATFORM_OPTIONAL_DEPS_EXCLUDE CEC)
 set(APP_RENDER_SYSTEM gles)
 list(APPEND PLATFORM_OPTIONAL_DEPS LibDovi)
 
-# Compile and target Android 15 APIs while remaining compatible with newer
-# Android 16 devices. The linker flags below provide 16 KB ELF alignment with NDK r27.
-set(TARGET_SDK 35)
-# Minimum supported SDK version (Android 5.0).
-set(TARGET_MINSDK 21)
+# Compile and target Android 14 APIs while remaining compatible with newer
+# Android 16 devices. The linker flags below provide 16 KB ELF alignment.
+set(TARGET_SDK 34)
+# Minimum supported SDK version (Android 9.0).
+set(TARGET_MINSDK 28)
 
 add_link_options("-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384")
 

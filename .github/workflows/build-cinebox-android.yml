@@ -26,9 +26,9 @@ jobs:
     env:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
-      # NDK r27 supports Android 5.0. 16 KB ELF alignment is added explicitly
-      # by the Cinebox Android toolchain for Android 16 compatibility.
-      ANDROID_NDK_VERSION: 27.3.13750724
+      # NDK r21 is the Kodi Omega-compatible baseline. It supports Android 9+
+      # while Cinebox explicitly adds 16 KB ELF alignment for Android 16.
+      ANDROID_NDK_VERSION: 21.4.7075529
       BUILD_JOBS: 2
 
     steps:
@@ -101,13 +101,14 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/.cache/kodi-tarballs" "$RUNNER_TEMP/cinebox-depends-${{ matrix.abi }}"
           cd tools/depends
           ./bootstrap
-          # Keep the universal APK compatible with Android 5.0 / API 21.
+          # Android 9.0 / API 28 adds the modern POSIX APIs required by
+          # current dependencies and keeps Android 16 support.
           ./configure \
             --with-tarballs="$GITHUB_WORKSPACE/.cache/kodi-tarballs" \
             --host=${{ matrix.host }} \
             --with-sdk-path="$ANDROID_SDK_ROOT" \
             --with-ndk-path="$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK_VERSION" \
-            --with-ndk-api=21 \
+            --with-ndk-api=28 \
             --prefix="$RUNNER_TEMP/cinebox-depends-${{ matrix.abi }}" \
             --disable-ccache
           make -j"$BUILD_JOBS"
@@ -146,7 +147,7 @@ jobs:
     env:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
-      ANDROID_NDK_VERSION: 27.3.13750724
+      ANDROID_NDK_VERSION: 21.4.7075529
       KODI_ANDROID_STORE_FILE: ${{ github.workspace }}/cinebox-release.jks
       KODI_ANDROID_STORE_PASSWORD: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_PASSWORD }}
       KODI_ANDROID_KEY_ALIAS: cineboxrelease
@@ -262,7 +263,7 @@ jobs:
           apk_path="$(find "$arm64_workspace/xbmc/build/outputs/apk" -type f -name '*.apk' -print -quit)"
           test -n "$apk_path"
           cp "$apk_path" release/Cinebox-Omega-universal-arm32-arm64-test.apk
-          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --min-sdk-version 21 release/Cinebox-Omega-universal-arm32-arm64-test.apk
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --min-sdk-version 28 release/Cinebox-Omega-universal-arm32-arm64-test.apk
 
       - name: Verify Android 16 native-library compatibility
         run: |
@@ -319,9 +320,10 @@ jobs:
           Cinebox Omega universal ARM Android test APK
 
           This APK contains native libraries for both 64-bit ARM (arm64-v8a)
-          and 32-bit ARM (armeabi-v7a) Android and Android TV devices. Android
-          selects the appropriate libraries when installing it. Intel x86 and
-          x86_64 devices are not included.
+          and 32-bit ARM (armeabi-v7a) Android and Android TV devices running
+          Android 9 / API 28 or later. Android selects the appropriate
+          libraries when installing it. Intel x86 and x86_64 devices are not
+          included.
 
           Android 16 compatibility: ARM64 native libraries are built and APK-
           aligned for 16 KB page-size devices.
