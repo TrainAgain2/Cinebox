@@ -303,6 +303,21 @@ jobs:
           cp "$apk_path" release/Cinebox-Omega-universal-arm32-arm64-test.apk
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --min-sdk-version 28 release/Cinebox-Omega-universal-arm32-arm64-test.apk
 
+          # Python add-ons load Pillow modules with dlopen(). These must be
+          # compressed in the APK so Android extracts them into lib/<ABI>/.
+          python3 - <<'PY'
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          apk = 'release/Cinebox-Omega-universal-arm32-arm64-test.apk'
+          with ZipFile(apk) as archive:
+              for abi in ('arm64-v8a', 'armeabi-v7a'):
+                  module = f'lib/{abi}/lib_imaging.so'
+                  info = archive.getinfo(module)
+                  if info.compress_type != ZIP_DEFLATED:
+                      raise SystemExit(f'{module} is not packaged for Android extraction')
+          print('Pillow native modules are packaged for Android extraction.')
+          PY
+
       - name: Verify Android 16 native-library compatibility
         run: |
           set -euo pipefail

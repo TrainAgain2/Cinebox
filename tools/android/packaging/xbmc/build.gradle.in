@@ -46,9 +46,11 @@ android {
         }
     }
     packagingOptions{
-      // Keep native libraries uncompressed; AGP 8.5.1 aligns them to 16 KB.
+      // Pillow modules are loaded at runtime by Python with dlopen(). Keep
+      // legacy packaging so Android extracts every JNI library to the app's
+      // native-library directory before add-ons request them.
       jniLibs {
-        useLegacyPackaging false
+        useLegacyPackaging true
       }
       doNotStrip '**.setup'
     }
