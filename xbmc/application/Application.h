@@ -243,6 +243,7 @@ public:
 private:
   void PrintStartupLog();
   void ResetCurrentItem();
+  void StartDeferredStartupTasks();
 
   mutable CCriticalSection m_critSection; /*!< critical section for all changes to this class, except for changes to triggers */
 
@@ -253,6 +254,7 @@ private:
   int m_ExitCode{EXITCODE_QUIT};
   std::shared_ptr<CFileItem> m_itemCurrentFile; //!< Currently playing file
   CEvent m_playerEvent;
+  bool m_deferStartupTasks{false};
 };
 
 XBMC_GLOBAL_REF(CApplication,g_application);
