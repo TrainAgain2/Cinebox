@@ -88,7 +88,10 @@ jobs:
             -validity 10000
 
       - name: Restore downloaded source tarballs
-        uses: actions/cache@v4
+        # The downloaded tarballs are only a speed optimization. Restore the
+        # cache when available, but never save it after the build: a cache
+        # service failure must not discard a correctly built APK workspace.
+        uses: actions/cache/restore@v4
         with:
           path: .cache/kodi-tarballs
           key: cinebox-android-tarballs-${{ matrix.abi }}-${{ hashFiles('tools/depends/**') }}
