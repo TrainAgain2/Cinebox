@@ -189,7 +189,7 @@ bool CViewStateSettings::Save(TiXmlNode *settings) const
 
 void CViewStateSettings::Clear()
 {
-  m_settingLevel = SettingLevel::Standard;
+  m_settingLevel = SettingLevel::Expert;
 }
 
 const CViewState* CViewStateSettings::Get(const std::string &viewState) const
