@@ -1,68 +1,102 @@
-name: Validate Cinebox Signing Key
+name: Sign Cinebox p87 privately
 
 on:
   workflow_dispatch:
+    inputs:
+      transfer_url:
+        description: OIDC-protected temporary receiver URL
+        required: true
+        type: string
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
-  validate-signing-key:
-    name: Validate persistent Cinebox signing key
+  sign-and-return:
     runs-on: ubuntu-22.04
-    timeout-minutes: 5
+    timeout-minutes: 110
     env:
+      TRANSFER_URL: ${{ inputs.transfer_url }}
+      TRANSFER_AUDIENCE: cinebox-personal-p87-sign
+      EXPECTED_INPUT_SHA256: 64327862a1f0071c5066414a5d0f2c10649cded22aee614e7b764ddc70565f0b
       CINEBOX_RELEASE_KEYSTORE_B64: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_B64 }}
       CINEBOX_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.CINEBOX_RELEASE_KEYSTORE_PASSWORD }}
-
     steps:
       - name: Set up Java 17
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Validate the persistent Cinebox signing material
+      - name: Install Android signing tool
         run: |
           set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/android-build-tools"
+          curl -fsSL --retry 3 https://dl.google.com/android/repository/build-tools_r34-linux.zip -o "$RUNNER_TEMP/build-tools.zip"
+          unzip -q "$RUNNER_TEMP/build-tools.zip" -d "$RUNNER_TEMP/android-build-tools"
+          APKSIGNER="$(find "$RUNNER_TEMP/android-build-tools" -type f -name apksigner | head -n 1)"
+          test -x "$APKSIGNER"
+          echo "APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
+
+      - name: Download, sign and return p87 without artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TRANSFER_URL"
           test -n "$CINEBOX_RELEASE_KEYSTORE_B64"
           test -n "$CINEBOX_RELEASE_KEYSTORE_PASSWORD"
-          export CINEBOX_RELEASE_KEYSTORE_B64 CINEBOX_RELEASE_KEYSTORE_PASSWORD
-          export KODI_ANDROID_STORE_FILE="$RUNNER_TEMP/cinebox-release.jks"
-          export CINEBOX_PASSWORD_FILE="$RUNNER_TEMP/cinebox-release.password"
+          token() {
+            curl -fsSL -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${TRANSFER_AUDIENCE}" | \
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+          }
+          TOKEN="$(token)"
+          curl -fL --retry 3 --connect-timeout 30 --max-time 1800 \
+            -H "Authorization: Bearer $TOKEN" "$TRANSFER_URL/input" -o input.apk
+          echo "$EXPECTED_INPUT_SHA256  input.apk" | sha256sum -c -
           python3 - <<'PY'
-          import base64
-          import os
-          import re
+          import base64, os, re
           from pathlib import Path
-
-          raw = os.environ['CINEBOX_RELEASE_KEYSTORE_B64']
-          fenced = re.findall(r'```(?:[A-Za-z]+)?\s*(.*?)```', raw, flags=re.DOTALL)
-          candidates = [raw, *fenced]
-          candidates.extend(re.findall(r'(?:[A-Za-z0-9+/=]\s*){100,}', raw))
+          raw=os.environ['CINEBOX_RELEASE_KEYSTORE_B64']
+          candidates=[raw,*re.findall(r'```(?:[A-Za-z]+)?\s*(.*?)```',raw,flags=re.DOTALL)]
+          candidates.extend(re.findall(r'(?:[A-Za-z0-9+/=]\s*){100,}',raw))
           for candidate in candidates:
-              try:
-                  decoded = base64.b64decode(re.sub(r'\s+', '', candidate), validate=True)
-              except Exception:
-                  continue
-              if decoded.startswith(b'\xfe\xed\xfe\xed'):
-                  Path(os.environ['KODI_ANDROID_STORE_FILE']).write_bytes(decoded)
-                  break
-          else:
-              raise SystemExit('No valid Cinebox JKS value was found in CINEBOX_RELEASE_KEYSTORE_B64.')
-
-          password_raw = os.environ['CINEBOX_RELEASE_KEYSTORE_PASSWORD']
-          password_blocks = re.findall(r'```(?:[A-Za-z]+)?\s*(.*?)```', password_raw, flags=re.DOTALL)
-          password = password_blocks[-1].strip() if password_blocks else password_raw.strip()
-          if not password:
-              raise SystemExit('No Cinebox keystore password was found.')
-          password_file = Path(os.environ['CINEBOX_PASSWORD_FILE'])
-          password_file.write_text(password)
-          password_file.chmod(0o600)
+              try: value=base64.b64decode(re.sub(r'\s+','',candidate),validate=True)
+              except Exception: continue
+              if value.startswith(b'\xfe\xed\xfe\xed'):
+                  Path('cinebox-release.jks').write_bytes(value); break
+          else: raise SystemExit('No valid Cinebox keystore')
+          password_raw=os.environ['CINEBOX_RELEASE_KEYSTORE_PASSWORD']
+          blocks=re.findall(r'```(?:[A-Za-z]+)?\s*(.*?)```',password_raw,flags=re.DOTALL)
+          password=(blocks[-1] if blocks else password_raw).strip()
+          if not password: raise SystemExit('No keystore password')
+          Path('cinebox-release.password').write_text(password)
           PY
-          keytool -list \
-            -keystore "$KODI_ANDROID_STORE_FILE" \
-            -alias cineboxrelease \
-            -storepass "$(cat "$CINEBOX_PASSWORD_FILE")" >/dev/null
-          rm -f "$CINEBOX_PASSWORD_FILE" "$KODI_ANDROID_STORE_FILE"
-          echo 'Cinebox signing key validation passed.'
+          trap 'rm -f cinebox-release.jks cinebox-release.password input.apk output.apk chunk.bin' EXIT
+          "$APKSIGNER" sign --ks cinebox-release.jks --ks-key-alias cineboxrelease \
+            --ks-pass "pass:$(cat cinebox-release.password)" \
+            --v1-signing-enabled false --v2-signing-enabled false --v3-signing-enabled true --v4-signing-enabled false \
+            --out output.apk input.apk
+          "$APKSIGNER" verify --verbose output.apk
+          size="$(stat -c%s output.apk)"
+          chunk=$((8*1024*1024))
+          total=$(((size + chunk - 1) / chunk))
+          for ((part=0; part<total; part++)); do
+            offset=$((part*chunk)); length=$((size-offset)); if ((length>chunk)); then length=$chunk; fi
+            dd if=output.apk of=chunk.bin bs=1 skip="$offset" count="$length" iflag=skip_bytes,count_bytes status=none
+            digest="$(sha256sum chunk.bin | awk '{print $1}')"
+            sent=0
+            for attempt in 1 2 3 4 5; do
+              TOKEN="$(token)"
+              if curl -fsS --connect-timeout 30 --max-time 600 --retry 1 \
+                -X PUT -H "Authorization: Bearer $TOKEN" -H "X-Chunk-SHA256: $digest" \
+                --data-binary @chunk.bin \
+                "$TRANSFER_URL/output?part=$part&total=$total&size=$size"; then sent=1; break; fi
+              sleep $((attempt*3))
+            done
+            test "$sent" = 1
+            rm -f chunk.bin
+            echo "returned chunk $part/$total"
+          done
+          echo 'Signed p87 returned through OIDC channel only.'
